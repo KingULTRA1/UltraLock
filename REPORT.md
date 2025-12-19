@@ -4,7 +4,7 @@ Date: 2025-12-19
 
 Summary
 -------
-This report documents the current status of UltraLock after the final single-file pivot and QA work.
+This report documents the current status of UltraLock after the single-file pivot and QA work.
 
 Key outcomes
 ------------
@@ -36,6 +36,4 @@ Next steps / recommendations
 - Run the quick manual checklist in each target browser (desktop + mobile as applicable) to confirm behavior under real clipboard permissions.
 - If desired, add a Tampermonkey userscript header and a bookmarklet generator for easier user installs.
 
-Signed
-------
-Report generated and committed to repository by GitHub Copilot on 2025-12-19.
+Report added to repository on 2025-12-19.
