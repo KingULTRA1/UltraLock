@@ -3,9 +3,18 @@
 ## Threats mitigated
 
 - Clipboard hijacking and clipboard-manipulation attacks
+- Copy-time detection of pre-hijacked addresses (if clipboard metadata exists and mismatches the selection)
 - Context-menu and keyboard paste compromise when metadata mismatches
 - DOM mutation attacks that swap addresses after paste
 - Replay of old metadata via timestamp expiration
+
+## Copy-time alert
+
+If a user copies an address and the clipboard already contains UltraLock metadata that does not match the selected address (fingerprint or chain mismatch), UltraLock will immediately block the copy and show the following critical alert:
+
+"⚠️ Attention: The address you copied does not match the original verified address. UltraLock enabled. This transaction is NOT secure. Recommendation: Clear your browser or use another device for this transaction."
+
+This is a fail-closed protective measure to prevent propagation of already-compromised addresses.
 
 ## Threats explicitly not mitigated
 

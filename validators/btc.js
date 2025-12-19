@@ -58,10 +58,6 @@
     return new Uint8Array(bytes);
   }
 
-  function hexToUtf8(hex) {
-    return hexToBytes(hex).map((b) => String.fromCharCode(b)).join('');
-  }
-
   function arrEqual(a, b) {
     if (!a || !b || a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
