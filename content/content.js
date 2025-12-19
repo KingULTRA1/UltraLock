@@ -104,7 +104,7 @@
     } catch (err) {
       console.error('UltraLock copy handler failed:', err);
       // Fail-closed: If anything goes wrong during the copy instrumentation, block the copy
-      try { e.preventDefault(); e.stopImmediatePropagation(); } catch (ignored) {}
+      try { e.preventDefault(); e.stopImmediatePropagation(); } catch (ignored) { /* ignore errors when preventing default */ }
       window.UltraLockOverlay.showBlocked('⚠️ UltraLock encountered an error and blocked the copy to preserve integrity.');
     }
   }
@@ -132,9 +132,9 @@
 
       // Validate metadata
       if (!meta || meta.fingerprint !== fingerprint || meta.chain !== detected.chain || (Date.now() - meta.ts) > METADATA_TTL_MS) {
-        // Block paste
+        // Block paste — fail-closed and show critical alert
         e.preventDefault();
-        window.UltraLockOverlay.showBlocked('Address integrity check failed — paste blocked.');
+        window.UltraLockOverlay.showBlocked('⚠️ UltraLock detected address mismatch. Transaction unsafe. Do NOT proceed. Clear your browser or use another secure device.', { blocking: true });
         // For keyboard and context menu paste, we prevent default and stop propagation
         e.stopImmediatePropagation();
         return;
@@ -188,7 +188,7 @@
     const moz = el.__ultralockObserver;
     if (moz) return; // already observed
 
-    const observer = new MutationObserver((_records) => {
+    const observer = new MutationObserver(() => {
       const meta = metadataStore.get(el);
       if (!meta) return; // nothing to verify
       (async () => {

@@ -33,27 +33,55 @@
     setTimeout(() => el.remove(), 3000);
   }
 
-  function showBlocked(message) {
+  function showBlocked(message, opts) {
+    // opts.blocking = true will create a full-screen modal that blocks interaction
+    const blocking = opts && opts.blocking;
     const root = ensureRoot();
     const el = document.createElement('div');
     el.className = 'ultralock-indicator blocked';
-    el.textContent = message; // message should include icon prefix to preserve exact alert wording
+    // Build modal content
+    const content = document.createElement('div');
+    content.style.whiteSpace = 'pre-wrap';
+    content.textContent = message; // message should include icon prefix to preserve exact alert wording
+
+    el.appendChild(content);
+
+    if (blocking) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Abort';
+      Object.assign(btn.style, {
+        marginTop: '8px',
+        padding: '8px 10px',
+        borderRadius: '6px',
+        border: 'none',
+        cursor: 'pointer'
+      });
+      btn.addEventListener('click', () => el.remove());
+      el.appendChild(btn);
+    }
+
     Object.assign(el.style, {
-      position: 'fixed',
-      right: '12px',
-      top: '12px',
+      position: blocking ? 'fixed' : 'fixed',
+      left: blocking ? '0' : '12px',
+      top: blocking ? '0' : '12px',
+      right: blocking ? '0' : '',
+      bottom: blocking ? '0' : '',
       background: '#d33',
       color: '#fff',
-      padding: '8px 10px',
-      borderRadius: '6px',
+      padding: blocking ? '24px' : '8px 10px',
+      borderRadius: blocking ? '0' : '6px',
       pointerEvents: 'auto',
       boxShadow: '0 2px 12px rgba(0,0,0,0.6)',
-      maxWidth: '420px',
-      whiteSpace: 'pre-wrap'
+      maxWidth: blocking ? '100%' : '420px',
+      zIndex: 2147483647,
+      display: 'flex',
+      flexDirection: 'column'
     });
+
     root.appendChild(el);
-    // Keep a critical/attention alert longer so user sees it
-    setTimeout(() => el.remove(), 15000);
+
+    // Keep a critical/attention alert longer so user sees it; blocking needs user action
+    if (!blocking) setTimeout(() => el.remove(), 15000);
   }
 
   function showLocked(fingerprint, el) {

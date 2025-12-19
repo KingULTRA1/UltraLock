@@ -6,6 +6,7 @@
 - No network calls for validation logic.
 - Prefer small, self-contained validator modules under `validators/`.
 - Keep metadata memory-only and ephemeral.
+- Any change to copy/paste or clipboard handling requires an explicit security review and test vectors that include copy-time metadata mismatch cases.
 
 ## Validator extension guide
 

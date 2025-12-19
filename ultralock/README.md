@@ -24,8 +24,12 @@ Additional chains can be added by implementing the validator interface in `valid
 ## How it works (copy → paste → verify)
 
 1. COPY: On copy, detect a valid address, canonicalize it, compute SHA-256, truncate to first 16 chars, and write both `text/plain` and `application/x-ultralock+json` payloads to the clipboard. Visual indicator shows lock.
-2. PASTE: On paste, the extension intercepts the event, reads plain text and metadata, recomputes fingerprint, and allows or blocks the operation deterministically (fail-closed on mismatch or missing metadata).
-3. POST-PASTE: The extension monitors DOM mutations for pasted fields; if the address is changed or mutates, the input is disabled and the UI blocked immediately.
+2. COPY: On copy, UltraLock now checks for existing clipboard metadata before writing new metadata. If an existing clipboard fingerprint or chain does not match the current selection, UltraLock will immediately block the copy and display a critical alert:  
+
+"⚠️ Attention: The address you copied does not match the original verified address. UltraLock enabled. This transaction is NOT secure. Recommendation: Clear your browser or use another device for this transaction."  
+
+3. PASTE: On paste, the extension intercepts the event, reads plain text and metadata, recomputes fingerprint, and allows or blocks the operation deterministically (fail-closed on mismatch or missing metadata). On mismatch the paste is blocked and a critical alert is shown requiring user attention.  
+4. POST-PASTE: The extension monitors DOM mutations for pasted fields; if the address is changed or mutates, the input is disabled and the UI blocked immediately.
 
 ## Why fail-closed matters
 

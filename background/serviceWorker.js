@@ -3,11 +3,11 @@
    - Low-privileged background tasks, future centralized logging (no sensitive data persisted)
    - Manage extension lifecycle events
 */
-self.addEventListener('install', (_e) => {
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (_e) => {
+self.addEventListener('activate', () => {
   self.clients.claim();
 });
 

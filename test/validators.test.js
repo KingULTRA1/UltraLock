@@ -1,3 +1,4 @@
+/* eslint-env mocha, node */
 require('jsdom-global')();
 const fs = require('fs');
 const path = require('path');
@@ -98,6 +99,28 @@ describe('UltraLock validators & detect heuristics', () => {
   it('should reject non-address text', async () => {
     const res = await window.UltraLockDetect.detectAddress('hello world');
     expect(res).to.equal(null);
+  });
+
+  it('should block paste when metadata is mismatched', async () => {
+    const el = document.createElement('input');
+    document.body.appendChild(el);
+    el.focus();
+
+    const addr = '0xde709f2102306220921060314715629080e2fb77';
+    const mismatchMeta = JSON.stringify({ fingerprint: 'deadbeefcafef00d', chain: 'eth', address: '0xDEADBEEF', ts: Date.now() });
+
+    let blockedMessage = null;
+    const origBlocked = window.UltraLockOverlay.showBlocked;
+    window.UltraLockOverlay.showBlocked = (msg) => { blockedMessage = msg; };
+
+    const ev = new Event('paste', { bubbles: true, cancelable: true });
+    ev.clipboardData = { getData: (type) => { if (type === 'text/plain') return addr; if (type === 'application/x-ultralock+json') return mismatchMeta; return ''; } };
+    document.dispatchEvent(ev);
+
+    expect(blockedMessage).to.be.a('string');
+
+    window.UltraLockOverlay.showBlocked = origBlocked;
+    el.remove();
   });
 
   it('should block copy when clipboard has mismatched metadata', async () => {
