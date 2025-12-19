@@ -7,7 +7,11 @@
     "test": "npm run lint"
   },
   "devDependencies": {
-    "eslint": "^8.0.0"
+    "chai": "^6.2.1",
+    "eslint": "^8.0.0",
+    "jsdom": "^27.3.0",
+    "jsdom-global": "^3.0.2",
+    "mocha": "^11.7.5"
   },
   "license": "MIT"
 }
