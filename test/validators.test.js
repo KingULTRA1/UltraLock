@@ -12,9 +12,13 @@ const files = [
   'validators/doge.js',
   'validators/ltc.js',
   'utils/canonicalize.js',
-  'utils/detect.js'
+  'utils/detect.js',
+  'content/overlay.js',
+  'content/content.js'
 ];
 
+// Provide a minimal chrome stub for test environment
+global.chrome = global.chrome || { runtime: { getURL: (p) => p } };
 for (const f of files) {
   const src = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
   // Evaluate in the test VM so the IIFEs attach to the global window
@@ -33,6 +37,8 @@ describe('UltraLock validators & detect heuristics', () => {
   it('should validate a Bitcoin bech32 address', async () => {
     const addr = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080';
     const ok = await window.UltraLockBTC.isBech32(addr);
+    // debug when failing
+    if (!ok) console.log('bech32 check returned false for', addr);
     expect(ok).to.equal(true);
   });
 
@@ -92,5 +98,38 @@ describe('UltraLock validators & detect heuristics', () => {
   it('should reject non-address text', async () => {
     const res = await window.UltraLockDetect.detectAddress('hello world');
     expect(res).to.equal(null);
+  });
+
+  it('should block copy when clipboard has mismatched metadata', async () => {
+    // Arrange: set a mismatched in-memory clipboard metadata
+    window.__UltraLockLastMetadata = {
+      text: '0xDEADBEEF...',
+      jsonPayload: JSON.stringify({ fingerprint: 'deadbeefcafef00d', chain: 'eth', address: '0xDEADBEEF' }),
+      ts: Date.now()
+    };
+
+    // Spy the overlay
+    let blockedMessage = null;
+    const origBlocked = window.UltraLockOverlay.showBlocked;
+    window.UltraLockOverlay.showBlocked = (msg) => { blockedMessage = msg; };
+
+    // Create selection with a valid ETH address
+    const el = document.createElement('input');
+    document.body.appendChild(el);
+    el.value = '0xde709f2102306220921060314715629080e2fb77';
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
+
+    // Dispatch copy event
+    const ev = new Event('copy', { bubbles: true, cancelable: true });
+    document.dispatchEvent(ev);
+
+    // Assert copy was blocked (blockedMessage set)
+    expect(blockedMessage).to.be.a('string');
+
+    // Cleanup
+    window.UltraLockOverlay.showBlocked = origBlocked;
+    delete window.__UltraLockLastMetadata;
+    el.remove();
   });
 });

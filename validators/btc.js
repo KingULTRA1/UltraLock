@@ -30,20 +30,23 @@
     return out;
   }
 
+  async function sha256Raw(bytes) {
+    // bytes: Uint8Array
+    const buffer = bytes.buffer ? bytes.buffer : (new Uint8Array(bytes)).buffer;
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return new Uint8Array(digest);
+  }
+
   function validateBase58Check(s) {
     try {
       const dec = base58Decode(s);
       if (dec.length < 4) return false;
       const payload = dec.slice(0, dec.length - 4);
       const checksum = dec.slice(dec.length - 4);
-      // double SHA256
-      return window.UltraLockFingerprint.sha256Hex(Array.from(payload).map((b) => String.fromCharCode(b)).join('')).then((h) => {
-        return window.UltraLockFingerprint.sha256Hex(hexToUtf8(h)).then((h2) => {
-          const full = h2;
-          const first4 = hexToBytes(full).slice(0, 4);
-          return arrEqual(first4, checksum);
-        });
-      }).catch(() => false);
+      return sha256Raw(payload).then((h1) => sha256Raw(h1).then((h2) => {
+        const first4 = h2.slice(0, 4);
+        return arrEqual(first4, checksum);
+      })).catch(() => false);
     } catch (err) {
       return Promise.resolve(false);
     }
@@ -68,14 +71,19 @@
   // Bech32 decode (BIP-173) — minimal implementation to validate
   const BECH32_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
+  function polymodStep(pre) {
+    const b = pre >>> 25;
+    return ((pre & 0x1ffffff) << 5) ^
+      ((b & 1) ? 0x3b6a57b2 : 0) ^
+      ((b & 2) ? 0x26508e6d : 0) ^
+      ((b & 4) ? 0x1ea119fa : 0) ^
+      ((b & 8) ? 0x3d4233dd : 0) ^
+      ((b & 16) ? 0x2a1462b3 : 0);
+  }
+
   function bech32Polymod(values) {
-    const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
     let chk = 1;
-    for (let p = 0; p < values.length; ++p) {
-      const top = chk >> 25;
-      chk = ((chk & 0x1ffffff) << 5) ^ values[p];
-      for (let i = 0; i < 5; ++i) if ((top >> i) & 1) chk ^= GEN[i];
-    }
+    for (let p = 0; p < values.length; ++p) chk = polymodStep(chk) ^ values[p];
     return chk;
   }
 
@@ -88,19 +96,29 @@
   }
 
   function isValidBech32(addr) {
+    if (!addr || typeof addr !== 'string') return false;
+    // Must be all lower or all upper (no mixed case)
+    const hasLower = /[a-z]/.test(addr);
+    const hasUpper = /[A-Z]/.test(addr);
+    if (hasLower && hasUpper) return false;
+
     const lower = addr.toLowerCase();
     const pos = lower.lastIndexOf('1');
-    if (pos < 1 || pos + 7 > lower.length) return false;
+    if (pos < 1) return false;
     const hrp = lower.slice(0, pos);
     const data = lower.slice(pos + 1);
-    const values = [];
+    if (data.length < 6) return false; // checksum length
+
+    const values = new Array(data.length);
     for (let i = 0; i < data.length; i++) {
       const c = data[i];
       const v = BECH32_CHARSET.indexOf(c);
       if (v === -1) return false;
-      values.push(v);
+      values[i] = v;
     }
+
     const chk = bech32Polymod(bech32HrpExpand(hrp).concat(values));
+    // checksum value for valid bech32 should be 1
     return chk === 1;
   }
 

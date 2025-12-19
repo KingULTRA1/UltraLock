@@ -60,6 +60,33 @@
       const hex = await sha256Hex(canonical);
       const fingerprint = hex.slice(0, 16);
 
+      // Check existing clipboard metadata to detect pre-copy hijack
+      const existingMeta = await window.UltraLockClipboard.readMetadataFromClipboard();
+      if (existingMeta) {
+        try {
+          // If chain/address/fingerprint mismatch, block and show immediate alert
+          if (existingMeta.fingerprint && existingMeta.fingerprint !== fingerprint) {
+            // Block the copy action — fail-closed
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            window.UltraLockOverlay.showBlocked('⚠️ Attention: The address you copied does not match the original verified address. UltraLock enabled. This transaction is NOT secure. Recommendation: Clear your browser or use another device for this transaction.');
+            return;
+          }
+          if (existingMeta.chain && existingMeta.chain !== detected.chain) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            window.UltraLockOverlay.showBlocked('⚠️ Attention: The address you copied does not match the original verified address. UltraLock enabled. This transaction is NOT secure. Recommendation: Clear your browser or use another device for this transaction.');
+            return;
+          }
+        } catch (err) {
+          // If metadata is malformed, fail-closed and block
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          window.UltraLockOverlay.showBlocked('⚠️ Attention: Clipboard metadata is malformed. UltraLock enabled — copy blocked.');
+          return;
+        }
+      }
+
       const payload = {
         meta_version: 1,
         chain: detected.chain,
@@ -76,7 +103,9 @@
 
     } catch (err) {
       console.error('UltraLock copy handler failed:', err);
-      // Fail-closed: If anything goes wrong during the copy instrumentation, we do not prevent copy itself.
+      // Fail-closed: If anything goes wrong during the copy instrumentation, block the copy
+      try { e.preventDefault(); e.stopImmediatePropagation(); } catch (ignored) {}
+      window.UltraLockOverlay.showBlocked('⚠️ UltraLock encountered an error and blocked the copy to preserve integrity.');
     }
   }
 
