@@ -37,7 +37,7 @@
     const root = ensureRoot();
     const el = document.createElement('div');
     el.className = 'ultralock-indicator blocked';
-    el.textContent = `⛔ ${message}`;
+    el.textContent = message; // message should include icon prefix to preserve exact alert wording
     Object.assign(el.style, {
       position: 'fixed',
       right: '12px',
@@ -47,10 +47,13 @@
       padding: '8px 10px',
       borderRadius: '6px',
       pointerEvents: 'auto',
-      boxShadow: '0 2px 12px rgba(0,0,0,0.6)'
+      boxShadow: '0 2px 12px rgba(0,0,0,0.6)',
+      maxWidth: '420px',
+      whiteSpace: 'pre-wrap'
     });
     root.appendChild(el);
-    setTimeout(() => el.remove(), 5000);
+    // Keep a critical/attention alert longer so user sees it
+    setTimeout(() => el.remove(), 15000);
   }
 
   function showLocked(fingerprint, el) {
