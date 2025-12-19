@@ -1,5 +1,7 @@
-# UltraLock
-UltraLock: A browser script that ensures crypto wallet addresses remain immutable and tamper-proof during copy and paste.
+# UltraLock🔒
+UltraLock🔒: A browser script that ensures crypto wallet addresses remain immutable and tamper-proof during copy and paste.
+
+**Core script:** `ultralock.js` — single-file, zero-deps, fail‑closed address integrity protector.
 
 ## Manual test
 Open `test.html` in a real browser (or via the local server at `http://127.0.0.1:8000/test.html`). Use the **Automation helpers** section to simulate Copy / Paste flows:
