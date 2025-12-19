@@ -2,6 +2,8 @@
 
 Date: 2025-12-19
 
+Release: v1.01 (Final)
+
 Summary
 -------
 This report documents the current status of UltraLock after the single-file pivot and QA work.

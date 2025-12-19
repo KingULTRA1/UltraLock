@@ -1,6 +1,7 @@
-# iOS Integration Notes (Safari Web Extension)
+# iOS — UltraLock v1.01 (Final)
 
-- Use Safari Web Extension format to package the extension for iOS/macOS.
-- Clipboard interception on iOS is limited; perform integrity checks in a small app extension or via user-activated 'Paste into UltraLock' flow when native interception is unavailable.
-- Implement pre-transaction checks by integrating with target wallet apps via URL schemes or app intents, providing the canonicalized address and fingerprint for verification prior to transaction confirmation.
-- Ensure memory-only handling of any metadata and TTL enforcement similar to the browser extension.
+UltraLock v1.01 (Final) — single-file, zero-deps integrity protector for copy/paste on Safari and in-app WebViews.
+
+- Use Safari Web Extension format where applicable; where native clipboard interception is limited, provide a 'Paste into UltraLock' flow (user-activated) or a small app extension to perform verification.
+- Integrate pre-transaction checks with wallet apps via URL schemes or app intents where available; always verify canonicalized address + fingerprint prior to transaction confirmation.
+- Memory-only metadata and short TTLs are required to minimize risk; do not persist sensitive metadata to disk.

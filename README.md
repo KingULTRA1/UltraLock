@@ -1,4 +1,7 @@
 # UltraLock🔒
+
+**Release:** v1.01 (Final) — single-file, zero-deps, fail-closed address integrity protector.
+
 UltraLock🔒: A browser script that ensures crypto wallet addresses remain immutable and tamper-proof during copy and paste.
 
 **Core script:** `ultralock.js` — single-file, zero-deps, fail‑closed address integrity protector.

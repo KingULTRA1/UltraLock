@@ -1,6 +1,7 @@
-# Android Integration Notes
+# Android — UltraLock v1.01 (Final)
 
-- Use an Accessibility Service for broad clipboard monitoring (with privacy-preserving design and opt-in only).
-- Alternatively, use a lightweight background clipboard watcher combined with a small helper app that enforces address integrity before handing a value to a wallet app.
-- For WebView-based wallets, integrate a local JavaScript bridge to intercept paste events and perform fingerprint verification in-process.
-- Do not persist metadata to disk; keep TTL and memory-only semantics identical to the browser extension.
+UltraLock v1.01 (Final) — single-file, zero-deps integrity protector for copy/paste across platforms (browser, mobile WebView, wallet integrations).
+
+- Supported flows: WebView-based wallets, companion helper apps, or direct in-app WebViews. Prefer in-process verification (canonicalize → fingerprint → verify) and memory-only metadata (no persistence).
+- Use Accessibility Service only for explicit, opt-in clipboard monitoring on Android; do not persist metadata to disk.
+- For integration, call UltraLock's in-page API or use a small helper to perform fingerprint verification before passing addresses to wallet apps.
