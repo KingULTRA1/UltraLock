@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>UltraLock🔒 — Test Page</title>
+</head>
+<body>
+  <h1>UltraLock🔒 — Quick Manual Tests</h1>
+  <p>Open the console to see debug logs. Try selecting the inputs below and use Copy / Paste to test behavior.</p>
+
+  <div>
+    <label>ETH example:</label>
+    <input id="eth" value="0xde709f2102306220921060314715629080e2fb77" style="width:480px" />
+  </div>
+
+  <div>
+    <label>BTC bech32:</label>
+    <input id="btc" value="bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080" style="width:480px" />
+  </div>
+
+  <div>
+    <label>Generic text:</label>
+    <input id="any" value="hello world" style="width:480px" />
+  </div>
+
+  <p>Try selecting the ETH or BTC line and pressing Ctrl+C, then focus another input and press Ctrl+V. For alerts, the script will block on mismatch and show a blocking UI.</p>
+
+  <script src="UltraLock🔒.js"></script>
+</body>
+</html>
