@@ -223,5 +223,6 @@
 
       const canonical = canonicalize(detected.address, detected.chain);
       const fp = await fingerprintFor(canonical, detected.chain);
+      console.debug('[UltraLock] onCopy detected', { chain: detected.chain, address: canonical, fingerprint: fp });
 
   (truncated...)

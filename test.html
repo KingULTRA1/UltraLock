@@ -25,6 +25,50 @@
 
   <p>Try selecting the ETH or BTC line and pressing Ctrl+C, then focus another input and press Ctrl+V. For alerts, the script will block on mismatch and show a blocking UI.</p>
 
+  <div style="margin-top:16px;padding:12px;border:1px solid #ccc;max-width:640px;background:#f9f9f9">
+    <h3>Automation helpers (for debugging)</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="btn-copy-eth">Simulate Copy ETH</button>
+      <button id="btn-paste-good">Simulate Paste (good)</button>
+      <button id="btn-paste-bad">Simulate Paste (bad/mismatch)</button>
+      <button id="btn-show-meta">Show Memory Meta</button>
+    </div>
+    <pre id="debug-output" style="margin-top:8px;white-space:pre-wrap;background:#111;color:#0f0;padding:8px;border-radius:4px;max-height:200px;overflow:auto"></pre>
+  </div>
+
+  <script>
+    const out = (s) => { const el = document.getElementById('debug-output'); el.textContent += s + '\n'; el.scrollTop = el.scrollHeight; };
+    document.getElementById('btn-copy-eth').addEventListener('click', () => {
+      const el = document.getElementById('eth'); el.focus(); el.setSelectionRange(0, el.value.length);
+      const ev = new Event('copy', { bubbles: true, cancelable: true });
+      const cancelled = !document.dispatchEvent(ev);
+      out('Simulated copy event dispatched; defaultPrevented=' + (ev.defaultPrevented ? 'yes' : 'no'));
+    });
+
+    document.getElementById('btn-paste-good').addEventListener('click', async () => {
+      // read memory meta and use that text as paste
+      const meta = window.UltraLock && window.UltraLock.readMeta && window.UltraLock.readMeta();
+      const text = (meta && meta.address) || document.getElementById('eth').value;
+      const ev = new Event('paste', { bubbles: true, cancelable: true });
+      ev.clipboardData = { getData: (t) => text };
+      document.dispatchEvent(ev);
+      out('Simulated paste-good with text: ' + text + '; defaultPrevented=' + (ev.defaultPrevented ? 'yes' : 'no'));
+    });
+
+    document.getElementById('btn-paste-bad').addEventListener('click', () => {
+      const text = '0xDEADBEEF00000000000000000000000000000000';
+      const ev = new Event('paste', { bubbles: true, cancelable: true });
+      ev.clipboardData = { getData: (t) => text };
+      document.dispatchEvent(ev);
+      out('Simulated paste-bad with text: ' + text + '; defaultPrevented=' + (ev.defaultPrevented ? 'yes' : 'no'));
+    });
+
+    document.getElementById('btn-show-meta').addEventListener('click', () => {
+      const meta = (window.UltraLock && window.UltraLock.readMeta && window.UltraLock.readMeta()) || null;
+      out('Memory meta: ' + JSON.stringify(meta));
+    });
+  </script>
+
   <script src="ultralock.js"></script>
 </body>
 </html>
