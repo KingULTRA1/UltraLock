@@ -1,0 +1,13 @@
+{
+  "name": "ultralock",
+  "version": "1.0.0",
+  "description": "Fail-closed wallet address integrity for copy-paste",
+  "scripts": {
+    "lint": "eslint . --ext .js",
+    "test": "npm run lint"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0"
+  },
+  "license": "MIT"
+}
