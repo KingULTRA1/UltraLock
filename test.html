@@ -15,7 +15,7 @@
 
   <div>
     <label>BTC (real):</label>
-    <input id="btc-real" value="bc1qw9cqf600jzcvkd53lpf6j9w93x806z5x5c0t8q" style="width:640px" />
+    <input id="btc-real" data-chain="btc_bech32" value="bc1qw9cqf600jzcvkd53lpf6j9w93x806z5x5c0t8q" style="width:640px" />
   </div>
 
   <div>
@@ -45,14 +45,15 @@
   <script>
     const out = (s) => { const el = document.getElementById('debug-output'); el.textContent += s + '\n'; el.scrollTop = el.scrollHeight; };
 
-    // Simulate a secure copy using UltraLock API
+    // Simulate a secure copy using UltraLock API (no internal helpers)
     document.getElementById('btn-copy-btc').addEventListener('click', async () => {
       const el = document.getElementById('btc-real');
       const text = el.value || el.textContent || '';
-      const detected = window.UltraLockInternal && window.UltraLockInternal.detectAddress ? window.UltraLockInternal.detectAddress(text) : null;
-      if (!detected) { out('No address detected for copy'); return; }
-      await (window.UltraLock && window.UltraLock.bindClipboard && window.UltraLock.bindClipboard(detected.address, detected.chain));
-      out('Simulated secure copy of: ' + detected.address);
+      // For the test harness we specify chain explicitly via data-chain attribute to avoid exposing internals
+      const chain = el.getAttribute('data-chain') || 'btc_bech32';
+      if (!text) { out('No address text to copy'); return; }
+      await (window.UltraLock && window.UltraLock.bindClipboard && window.UltraLock.bindClipboard(text, chain));
+      out('Simulated secure copy of: ' + text);
     });
 
     document.getElementById('btn-paste-good').addEventListener('click', async () => {

@@ -302,9 +302,8 @@
     });
 
     // Attach internal helpers under window.UltraLock._internal (single global namespace)
-    try {
-      Object.defineProperty(window.UltraLock, '_internal', { value: { computeFingerprint, canonicalize, detectAddress }, configurable: true });
-    } catch (e) { /* ignore */ }
+    // No internal helpers exposed: only public API under `window.UltraLock` is available.
+    // This intentional restriction reduces attack surface and prevents reliance on internal helpers.
 
     log('UltraLock ready');
   }
