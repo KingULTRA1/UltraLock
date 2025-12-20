@@ -58,6 +58,9 @@ int main(void){
     printf("UltraLock bridge listening on http://127.0.0.1:%d/\n", port);
     printf("Token: %s\n", token);
     fflush(stdout);
+    // write port file to XDG_RUNTIME_DIR for local helpers
+    const char *xdg = getenv("XDG_RUNTIME_DIR"); char portpath[1024]; if (xdg && xdg[0]) snprintf(portpath, sizeof(portpath), "%s/ultralock_http_port", xdg); else { const char *home = getenv("HOME"); snprintf(portpath, sizeof(portpath), "%s/.local/share/ultralock_http_port", home); }
+    int pf = open(portpath, O_WRONLY|O_CREAT|O_TRUNC, 0600); if (pf >= 0) { char pbuf[32]; int n = snprintf(pbuf, sizeof(pbuf), "%d\n", port); write(pf, pbuf, n); close(pf); }
 
     while (1) {
         int c = accept(ls, NULL, NULL); if (c < 0) continue;

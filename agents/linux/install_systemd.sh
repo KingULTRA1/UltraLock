@@ -20,6 +20,13 @@ if [ -f "agents/linux/bridge" ]; then
 else
   echo "Warning: built binary agents/linux/bridge not found. Please build first or place your binary at $BIN_DIR/bridge"
 fi
+if [ -f "agents/linux/helper" ]; then
+  cp -f agents/linux/helper "$BIN_DIR/helper"
+  chmod 0755 "$BIN_DIR/helper"
+  echo "Installed helper -> $BIN_DIR/helper"
+else
+  echo "Note: helper binary agents/linux/helper not found. Build with: gcc -o agents/linux/helper agents/linux/helper.c"
+fi
 
 # Install unit files
 cp -f agents/linux/systemd/ultralock-agent.service "$UNIT_DIR/ultralock-agent.service"
