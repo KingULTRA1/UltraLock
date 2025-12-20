@@ -130,6 +130,34 @@ Check the browser console (F12) to see debug logs when using the automation help
 - Core script is single-file and dependency-free (`ultralock.js`) to make auditing straightforward.
 - Memory-only fallback is ephemeral (short TTL). The script aims to minimize persisted sensitive data.
 
+## Persistence & audit verification (Linux agent) 🔧
+
+- Durable binds store: the Linux agent persists registered bindings to a file at one of these paths (0600):
+  - `$XDG_DATA_HOME/ultralock_binds.txt` or `~/.local/share/ultralock_binds.txt` (fall-back).
+  - Binds are written atomically (tmp->rename) and are saved on every successful `BIND`, `UNBIND`, and `UNBINDADDR` operation.
+
+- Append-only audit log: the agent maintains an append-only audit log at:
+  - `$XDG_RUNTIME_DIR/ultralock_audit.log` or `~/.local/share/ultralock_audit.log` (fall-back). Each entry contains a chained SHA-256 hash to enable tamper detection.
+  - The audit log is fsync'd after each append to provide durability guarantees.
+
+- Audit verification tool (new): a tiny verifier `agents/linux/audit_verify.c` checks the integrity of the audit log by verifying the chained SHA-256 values. Usage:
+
+  ```sh
+  # Build the verifier
+  gcc -o agents/linux/audit_verify agents/linux/audit_verify.c -O2
+
+  # Run verification (exits 0 on success, non-zero on failure)
+  ./agents/linux/audit_verify
+  ```
+
+- Integration tests included:
+  - `agents/linux/test_persistence.sh` — tests that binds survive an agent restart (bind → restart → LIST shows the FP).
+  - `agents/linux/test_audit_verify.sh` — checks the verifier succeeds on an intact log and fails when the log is tampered.
+
+## Core frozen (2025-12-20) ❄️
+
+- **Final freeze:** As of v1.01+ (2025-12-20), the UltraLock *core* components — browser script (`ultralock.js`), Linux agent (`clipwatch`), local bridge, signed helper, bind store, and audit verification tooling — are considered functionally complete and **frozen**. Only critical security fixes, audit-verification improvements, or portability bug fixes will be accepted to these core parts. No further feature additions will be made to the core.
+
 ## Project files
 
 - `ultralock.js` — single-file core implementation (zero-deps).

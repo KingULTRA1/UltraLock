@@ -14,6 +14,9 @@ Key outcomes
 - Manual test harness: `test.html` — includes automation helpers to simulate Copy / Paste flows.
 - Behavior: Copy-time detection + fingerprinting, paste-time verification and blocking, and post-paste mutation disabling are implemented and exercised in the test harness.
 - Safety model: Fail-closed — operations are blocked on missing/mismatched metadata and on post-paste mutation.
+- Durable binds persistence implemented: registered fingerprints and address bindings are durably stored across restarts (atomic writes, 0600 perms).
+- Append-only **audit log** implemented with chained SHA-256 per entry; audit entries are fsync'd after every append to provide tamper-detection and durability.
+- `audit_verify` tool added to validate the chained audit log; accompanying tests validate tamper detection.
 
 Recent commits (head)
 ---------------------
