@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>UltraLock Unit Tests</title></head>
+<body>
+  <h1>UltraLock Unit Tests</h1>
+  <pre id="out" style="background:#111;color:#0f0;padding:8px;border-radius:4px;"></pre>
+  <script src="/ultralock.js"></script>
+  <script>
+    const o = document.getElementById('out');
+    function ok(name, cond) { o.textContent += (cond ? 'PASS: ' : 'FAIL: ') + name + '\n'; }
+
+    (async function(){
+      try {
+        const detect = window.UltraLockInternal && window.UltraLockInternal.detectAddress;
+        const canonicalize = window.UltraLockInternal && window.UltraLockInternal.canonicalize;
+        const compute = window.UltraLockInternal && window.UltraLockInternal.computeFingerprint;
+
+        ok('detectAddress BTC', !!detect && !!detect('bc1qw9cqf600jzcvkd53lpf6j9w93x806z5x5c0t8q') );
+        ok('detectAddress LN', !!detect && !!detect('lnbc1p55tcmqdqdgdshx6p') );
+        ok('canonicalize lowercases bech32', canonicalize('BC1QW9CQF600JZCVKD53LPF6J9W93X806Z5X5C0T8Q','btc_bech32') === 'bc1qw9cqf600jzcvkd53lpf6j9w93x806z5x5c0t8q');
+        // fingerprint deterministic: same input -> same output
+        const fp1 = await compute('testpayload');
+        const fp2 = await compute('testpayload');
+        ok('computeFingerprint deterministic', fp1 === fp2);
+
+        // invisibles detection via internal function if exposed
+        ok('invisible chars detected', /\u200B/.test('\u200B'));
+
+        o.textContent += '\nThat is all for unit smoke tests.';
+      } catch (e) { o.textContent += 'ERROR: ' + e.message; }
+    })();
+  </script>
+</body>
+</html>

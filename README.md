@@ -1,10 +1,18 @@
 # UltraLock🔒
 
+**Test:** Copy the BTC address below. Modify it. Paste it. UltraLock will block it.
+
+**Claim:** UltraLock enforces clipboard integrity at the moment of use. If the data changes, the operation is blocked.
+
+- **BTC:** `bc1qw9cqf600jzcvkd53lpf6j9w93x806z5x5c0t8q`
+- **Lightning invoice:** `lnbc1p55tcmqdqdgdshx6pqg9c8qpp5kduld8g5a36krmgy3gpejkr4wwcvpql33klwvwq3wqfefzuwcjpssp5g38e2nkfcclnfuazs9cu4kcp80gtxd308ldz4hvvqpx86efrxwvs9qrsgqcqpcxqy8ayqrzjqtsjy9p55gdceevp36fvdmrkxqvzfhy8ak2tgc5zgtjtra9xlaz97r026vqqv8qqquqqqqqqqqqqqqqq9grzjqfzhphca8jlc5zznw52mnqxsnymltjgg3lxe4ul82g42vw0jpkgkwzzl0sqqxgsqqqqqqqqqqqqqqqqq9gwhhm904pkn7zd9ju7lfr2y26fxdcvusck6x3z0tvdf905pe6j3sk25mjanq00lks6r7ve5amsk03kz9fk73yzvpdgjlasysz9r52wqcpdm7a3`
+
+
 **Release:** v1.01 (Final) — single-file, zero-deps, fail-closed address integrity protector.
 
 UltraLock🔒: A browser script that ensures crypto wallet addresses remain immutable and tamper-proof during copy and paste.
 
-**Core script:** `ultralock.js` — single-file, zero-deps, fail‑closed address integrity protector.
+**Core script:** `UltraLock.js` — single-file, zero-deps, fail‑closed address integrity protector.
 
 ## Manual test
 Open `test.html` in a real browser (or via the local server at `http://127.0.0.1:8000/test.html`). Use the **Automation helpers** section to simulate Copy / Paste flows:
@@ -66,7 +74,7 @@ Check the browser console (F12) to see debug logs when using the automation help
 
 ---
 
-If you want, I can add a ready-to-use userscript header (Tampermonkey) and a bookmarklet generator snippet to the repo to make installation easier across devices.
+Installation helpers (userscript header & bookmarklet) are available in `scripts/install.md`.
 
 ---
 
