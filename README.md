@@ -172,7 +172,9 @@ Installation helpers (userscript header & bookmarklet) are available in `scripts
 
 ## Support & Contact
 
-If you find **UltraLock🔒** useful, consider supporting development or sending a message: [@Ultra1 on X](https://x.com/Ultra1)
+If you find **UltraLock🔒** useful, consider supporting development or sending a message:
+Ultra on 𝕏 [Follow Ultra1](https://twitter.com/Ultra1)  
+KingULTRA1
 
 **Donations:**  
 - **BTC:** `bc1qw9cqf600jzcvkd53lpf6j9w93x806z5x5c0t8q`  
