@@ -73,6 +73,38 @@ Note: The browser's native Clipboard API may restrict read/write in certain cont
 
 - IPC helper: A small helper script is included at `agents/linux/ipc_cli.sh` for `LIST`, `BIND <fp>`, and `UNBIND <fp>` using only common system tools (`nc`, `socat`, or Python's AF_UNIX socket).
 
+- Systemd (recommended): install the agent and bridge as user services so they auto-start on login and persist across reboots.
+
+  1. Build the binaries (if not already built):
+
+     ```sh
+     gcc -o agents/linux/clipwatch agents/linux/clipwatch.c -lX11 -lm -O2
+     gcc -o agents/linux/bridge agents/linux/bridge.c -O2
+     ```
+
+  2. Install units and binaries (installs to `~/.local/bin` and `~/.config/systemd/user`):
+
+     ```sh
+     ./agents/linux/install_systemd.sh
+     ```
+
+  3. Enable and start the services (once systemctl is available):
+
+     ```sh
+     systemctl --user daemon-reload
+     systemctl --user enable --now ultralock-agent ultralock-bridge
+     ```
+
+  4. Verify status:
+
+     ```sh
+     systemctl --user status ultralock-agent ultralock-bridge
+     ```
+
+  Security notes:
+  - Units run as your user and use `ExecStart=%h/.local/bin/...` so the services operate only in your userspace.
+  - The bridge writes a short token to `$XDG_RUNTIME_DIR/ultralock_http_token` which the browser helper must present when calling the bridge (see next steps for browser helper guidance).
+
 - Installation tip: install as a user service (systemd user unit) or start it from your session's autostart for continuous protection.
 
 ## How to verify (manual quick checklist) ✅

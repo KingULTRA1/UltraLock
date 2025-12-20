@@ -1,0 +1,16 @@
+[Unit]
+Description=UltraLock clipboard agent (user)
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/clipwatch --daemon
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

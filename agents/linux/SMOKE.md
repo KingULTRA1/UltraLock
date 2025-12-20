@@ -57,3 +57,30 @@ Headless self-test
   ```
 
 This performs an internal bind for the example BTC address and verifies that the agent's fingerprint check allows it. The one-line success output indicates the integration test passed.
+
+Systemd user service
+
+- To autostart UltraLock on login and across reboots, use the provided installer to place binaries in `~/.local/bin` and install the user units:
+
+  ```sh
+  ./agents/linux/install_systemd.sh
+  systemctl --user daemon-reload
+  systemctl --user enable --now ultralock-agent ultralock-bridge
+  ```
+
+- Verify the services:
+
+  ```sh
+  systemctl --user status ultralock-agent ultralock-bridge
+  ```
+
+- To uninstall:
+
+  ```sh
+  systemctl --user disable --now ultralock-agent ultralock-bridge
+  rm ~/.config/systemd/user/ultralock-*.service
+  ```
+
+Notes
+
+- The bridge writes an ephemeral token to `$XDG_RUNTIME_DIR/ultralock_http_token`. A browser helper (added next) should read this token or require the user to copy it into the helper so that only local callers can call the bridge.
