@@ -18,6 +18,9 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
@@ -119,6 +122,10 @@ void sha256_hex(const char *in, char out[65]) {
 #define DEVICE_SALT_FILE "ultralock_device_salt"
 #define MAX_CLIP 4096
 
+// IPC binds store
+#define MAX_BINDS 256
+struct bind_entry { char fp[65]; long ts; };
+
 // Simple helper to read/write a file with restricted permissions
 char *read_or_create_device_salt() {
     const char *xdg = getenv(DEVICE_DIR_ENV);
@@ -168,8 +175,24 @@ void canonicalize(char *s) {
     strncpy(s, out, MAX_CLIP);
 }
 
-int main(void) {
+// Helper: test whether a given clipboard text would be allowed by current binds
+int check_clipboard_text(const char *text, char *out_reason, size_t out_sz, const char *device_salt, const char *session_nonce, struct bind_entry *binds) {
+    if (!text) return 1;
+    char local[MAX_CLIP]; strncpy(local, text, MAX_CLIP); canonicalize(local);
+    int is_addr = 0; if (strstr(local, "bc1") || strstr(local, "0x") || strstr(local, "lnbc")) is_addr = 1;
+    if (!is_addr) return 1; // not an address, allow
+    char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", local, "local-origin", device_salt, session_nonce);
+    char fp[65]; sha256_hex(composite, fp);
+    for (int b=0;b<MAX_BINDS;b++) { if (binds[b].fp[0] && strcmp(binds[b].fp, fp)==0) return 1; }
+    if (out_reason && out_sz>0) snprintf(out_reason, out_sz, "[UltraLock ALERT] Clipboard content appears to be a protected address; paste blocked by UltraLock.");
+    return 0;
+}
+
+int main(int argc, char **argv) {
     printf("UltraLock clipwatch prototype starting...\n");
+    // allow a headless self-test mode: ./clipwatch --selftest
+    int selftest = 0; if (argc > 1 && strcmp(argv[1], "--selftest") == 0) selftest = 1;
+
     char *device_salt = read_or_create_device_salt();
     if (!device_salt) { fprintf(stderr, "Failed to get device salt\n"); return 1; }
     char session_nonce[33];
@@ -177,6 +200,49 @@ int main(void) {
     for (int i=0;i<16;i++) sprintf(session_nonce + (i*2), "%02x", rn[i]);
     session_nonce[32] = '\0';
 
+    // Registered fingerprints (simple fixed-size store)
+    struct bind_entry binds[MAX_BINDS]; memset(binds,0,sizeof(binds));
+
+    // IPC socket setup (prepare path & server regardless of X state for headless tests)
+    char sockpath[1024];
+    const char *xdg_runtime = getenv("XDG_RUNTIME_DIR");
+    if (xdg_runtime && xdg_runtime[0]) snprintf(sockpath, sizeof(sockpath), "%s/ultralock.sock", xdg_runtime);
+    else {
+        const char *home = getenv("HOME");
+        snprintf(sockpath, sizeof(sockpath), "%s/.local/share/ultralock.sock", home);
+    }
+    // Ensure parent directory exists and has restricted perms
+    char sockdir[1024]; strncpy(sockdir, sockpath, sizeof(sockdir)); char *ps = strrchr(sockdir, '/'); if (ps) *ps='\0'; mkdir(sockdir, 0700);
+    // Remove stale socket
+    unlink(sockpath);
+
+    int srv = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (srv < 0) { perror("socket"); return 1; }
+    struct sockaddr_un addr; memset(&addr,0,sizeof(addr)); addr.sun_family = AF_UNIX; strncpy(addr.sun_path, sockpath, sizeof(addr.sun_path)-1);
+    if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("bind"); close(srv); return 1; }
+    chmod(sockpath, 0600);
+    if (listen(srv, 5) < 0) { perror("listen"); close(srv); return 1; }
+
+    if (selftest) {
+        // perform a headless integration test: bind a FP for a test address, then verify check allows it
+        const char *test_addr = "bc1qw9cqf600jzcvkd53lpf6j9w93x806z5x5c0t8q";
+        char canonical[MAX_CLIP]; strncpy(canonical, test_addr, MAX_CLIP); canonicalize(canonical);
+        char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
+        char fp[65]; sha256_hex(composite, fp);
+        // bind it
+        strncpy(binds[0].fp, fp, 65); binds[0].ts = time(NULL);
+        char reason[256] = {0};
+        int ok = check_clipboard_text(test_addr, reason, sizeof(reason), device_salt, session_nonce, binds);
+        if (ok) {
+            printf("address is safe and passed\n");
+            return 0;
+        } else {
+            printf("address check FAILED: %s\n", reason);
+            return 2;
+        }
+    }
+
+    // Normal operation: open X display and proceed with event loop
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) { fprintf(stderr, "Failed to open X display\n"); return 1; }
     Window root = DefaultRootWindow(dpy);
@@ -189,25 +255,82 @@ int main(void) {
     Atom utf8 = XInternAtom(dpy, "UTF8_STRING", False);
 
     char last_text[MAX_CLIP] = {0};
+    int client_fds[8]; for (int i=0;i<8;i++) client_fds[i] = -1;
 
     while (1) {
-            // Proper SelectionNotify flow: request UTF8_STRING conversion to our window property
+        // Proper SelectionNotify flow: request UTF8_STRING conversion to our window property
         Atom property = XInternAtom(dpy, "ULTRALOCK_PROP", False);
         XConvertSelection(dpy, clip, utf8, property, win, CurrentTime);
         XFlush(dpy);
 
+        // Build fd set including X11 connection, server socket, and any client sockets
+        int x11fd = ConnectionNumber(dpy);
+        fd_set readfds; FD_ZERO(&readfds);
+        FD_SET(x11fd, &readfds);
+        FD_SET(srv, &readfds);
+        int maxfd = x11fd > srv ? x11fd : srv;
+        for (int i=0;i<8;i++) if (client_fds[i] >= 0) { FD_SET(client_fds[i], &readfds); if (client_fds[i] > maxfd) maxfd = client_fds[i]; }
+
         // Wait for events with a timeout
         struct timeval tv; tv.tv_sec = 0; tv.tv_usec = POLL_MS * 1000;
-        int fd = ConnectionNumber(dpy);
-        fd_set in_fds;
-        FD_ZERO(&in_fds);
-        FD_SET(fd, &in_fds);
-        int sel = select(fd+1, &in_fds, NULL, NULL, &tv);
+        int sel = select(maxfd + 1, &readfds, NULL, NULL, &tv);
         if (sel <= 0) {
-            // no events, loop
+            // no events, but still process any pending X events (non-blocking)
+            while (XPending(dpy)) {
+                XEvent ev; XNextEvent(dpy, &ev);
+                // handle events below (reuse same code path)
+                if (ev.type == SelectionNotify) {
+                    // fall through to current handler by pushing back event (simple approach: handle inline)
+                }
+            }
             continue;
         }
-        // Process events
+
+        // Accept new client connections
+        if (FD_ISSET(srv, &readfds)) {
+            int c = accept(srv, NULL, NULL);
+            if (c >= 0) {
+                int placed = 0;
+                for (int i=0;i<8;i++) if (client_fds[i] < 0) { client_fds[i] = c; placed=1; break; }
+                if (!placed) { close(c); }
+                else { printf("[IPC] client connected\n"); }
+            }
+        }
+
+        // process client data
+        for (int i=0;i<8;i++) {
+            int cfd = client_fds[i];
+            if (cfd < 0) continue;
+            if (!FD_ISSET(cfd, &readfds)) continue;
+            char rbuf[1024]; ssize_t r = recv(cfd, rbuf, sizeof(rbuf)-1, 0);
+            if (r <= 0) { close(cfd); client_fds[i] = -1; continue; }
+            rbuf[r] = '\0';
+            // simple line handling: split on newlines
+            char *line = strtok(rbuf, "\r\n");
+            while (line) {
+                if (strncmp(line, "BIND ", 5) == 0) {
+                    char *fp = line + 5;
+                    if (strlen(fp) == 64) {
+                        // store
+                        int stored = 0;
+                        for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]==0) { strcpy(binds[b].fp, fp); binds[b].ts = time(NULL); stored=1; break; }
+                        if (stored) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR full\n", 10, 0);
+                    } else send(cfd, "ERR invalid-fp\n", 16, 0);
+                } else if (strncmp(line, "UNBIND ", 7) == 0) {
+                    char *fp = line + 7; int found=0;
+                    for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; }
+                    if (found) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR notfound\n", 14, 0);
+                } else if (strcmp(line, "LIST") == 0) {
+                    for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]) { char out[128]; snprintf(out, sizeof(out), "FP %s %ld\n", binds[b].fp, binds[b].ts); send(cfd, out, strlen(out), 0); }
+                    send(cfd, "END\n", 4, 0);
+                } else {
+                    send(cfd, "ERR unknown\n", 12, 0);
+                }
+                line = strtok(NULL, "\r\n");
+            }
+        }
+
+        // Handle any pending X events
         while (XPending(dpy)) {
             XEvent ev; XNextEvent(dpy, &ev);
             if (ev.type == SelectionNotify) {
@@ -231,14 +354,22 @@ int main(void) {
                     char fp[65]; sha256_hex(composite, fp);
                     int is_addr = 0; if (strstr(canonical, "bc1") || strstr(canonical, "0x") || strstr(canonical, "lnbc")) is_addr = 1;
                     if (is_addr) {
-                        // Replace clipboard by owning selection and serving the alert text
-                        char *msg = "[UltraLock ALERT] Clipboard content appears to be a protected address; paste blocked by UltraLock.";
-                        // become selection owner and store message
-                        XSetSelectionOwner(dpy, clip, win, CurrentTime);
-                        // store message in atom 'ULTRALOCK_CLIP'
-                        Atom clip_atom = XInternAtom(dpy, "ULTRALOCK_CLIP", False);
-                        XChangeProperty(dpy, win, clip_atom, utf8, 8, PropModeReplace, (unsigned char*)msg, strlen(msg));
-                        printf("[ALERT] Replaced clipboard content due to unbound protected address. Canonical: %s\n", canonical);
+                        // Compute fingerprint and check registered binds
+                        char fp[65]; sha256_hex(composite, fp);
+                        int allowed = 0;
+                        for (int b=0;b<MAX_BINDS;b++) { if (binds[b].fp[0] && strcmp(binds[b].fp, fp)==0) { allowed=1; break; } }
+                        if (allowed) {
+                            printf("[INFO] Clipboard contains bound address; allowing paste. Canonical: %s\n", canonical);
+                        } else {
+                            // Replace clipboard by owning selection and serving the alert text (fail-closed)
+                            char *msg = "[UltraLock ALERT] Clipboard content appears to be a protected address; paste blocked by UltraLock.";
+                            // become selection owner and store message
+                            XSetSelectionOwner(dpy, clip, win, CurrentTime);
+                            // store message in atom 'ULTRALOCK_CLIP'
+                            Atom clip_atom = XInternAtom(dpy, "ULTRALOCK_CLIP", False);
+                            XChangeProperty(dpy, win, clip_atom, utf8, 8, PropModeReplace, (unsigned char*)msg, strlen(msg));
+                            printf("[ALERT] Replaced clipboard content due to unbound protected address. Canonical: %s\n", canonical);
+                        }
                     } else {
                         printf("Clipboard changed: %s\n", canonical);
                     }

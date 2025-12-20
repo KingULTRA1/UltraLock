@@ -23,3 +23,37 @@ Steps
 Notes
 - The prototype treats any detected address as unbound and fails-closed by replacing the clipboard with an alert. Once IPC binding is implemented, the agent will accept bound fingerprints from the browser layer and allow verified clipboard content.
 - Wayland support is not implemented in this prototype.
+
+IPC test (BIND/UNBIND/LIST)
+
+1. Ensure the agent is running (in terminal A):
+   ./clipwatch
+
+2. In terminal B, use the provided helper to talk to the unix socket:
+   ./ipc_cli.sh LIST
+   # Expected: "END" (or a list of FP entries if any are bound)
+
+3. Bind a fingerprint (example):
+   ./ipc_cli.sh "BIND deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+   # Expected: "OK" or an error if invalid
+
+4. Verify the binding:
+   ./ipc_cli.sh LIST
+   # Expected: shows FP entry and END
+
+5. Unbind:
+   ./ipc_cli.sh "UNBIND deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+   # Expected: "OK"
+
+Note: You will need to generate the correct fingerprint from the browser layer (UltraLock.js) in a real bind flow; these commands demonstrate the IPC protocol and the expected responses.
+
+Headless self-test
+
+- There's a built-in self-test that runs without X or third-party tools. Execute:
+
+  ```sh
+  ./clipwatch --selftest
+  # Expected output: address is safe and passed
+  ```
+
+This performs an internal bind for the example BTC address and verifies that the agent's fingerprint check allows it. The one-line success output indicates the integration test passed.

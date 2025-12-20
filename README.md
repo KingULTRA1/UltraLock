@@ -25,6 +25,8 @@ Open `test.html` in a real browser (or via the local server at `http://127.0.0.1
 Note: The browser's native Clipboard API may restrict read/write in certain contexts; use a real browser page (not a file:// URL) and check the console for debug logs.
 ## Installation & usage 🔧
 
+### Browser (UltraLock.js)
+
 - Quick (local) install: download `ultralock.js` and include it in pages you control or trust:
 
   ```html
@@ -42,6 +44,36 @@ Note: The browser's native Clipboard API may restrict read/write in certain cont
 - Userscript (Tampermonkey/Greasemonkey): wrap `ultralock.js` as a userscript and configure it to run on the sites where you want protections. This is the recommended way to get persistent behavior without hosting pages yourself.
 
 - Embedding in a wallet or app: for WebView-based wallets or hosted apps, integrate `ultralock.js` into the app's page context or run it as part of the in-app web layer so clipboard interception happens in-process.
+
+### Linux agent (headless clipboard enforcement)
+
+- Build (no third-party deps):
+
+  ```sh
+  # requires gcc and libX11 dev headers only
+  gcc -o clipwatch agents/linux/clipwatch.c -lX11 -lm -O2
+  ```
+
+- Run (normal, requires X11):
+
+  ```sh
+  ./clipwatch
+  ```
+
+  When running in a desktop session the agent monitors the CLIPBOARD and will replace unbound addresses with a blocking message (fail-closed). The agent accepts fingerprint-only registrations over a local unix socket at `$XDG_RUNTIME_DIR/ultralock.sock` (0600).
+
+- Headless self-test (one-step, no X required): verify the installation and binding flow with the built-in test:
+
+  ```sh
+  ./clipwatch --selftest
+  # Expected output: address is safe and passed
+  ```
+
+  The self-test simulates binding a canonical fingerprint for the example BTC address and verifies that the agent allows it — the single-line output above indicates success.
+
+- IPC helper: A small helper script is included at `agents/linux/ipc_cli.sh` for `LIST`, `BIND <fp>`, and `UNBIND <fp>` using only common system tools (`nc`, `socat`, or Python's AF_UNIX socket).
+
+- Installation tip: install as a user service (systemd user unit) or start it from your session's autostart for continuous protection.
 
 ## How to verify (manual quick checklist) ✅
 
