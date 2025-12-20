@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
@@ -207,6 +208,46 @@ int main(int argc, char **argv) {
     // Registered fingerprints (simple fixed-size store)
     struct bind_entry binds[MAX_BINDS]; memset(binds,0,sizeof(binds));
 
+    // Audit log setup (append-only)
+    char audit_path[1024]; const char *xdgdata = getenv("XDG_RUNTIME_DIR");
+    if (xdgdata && xdgdata[0]) snprintf(audit_path, sizeof(audit_path), "%s/ultralock_audit.log", xdgdata);
+    else { const char *home = getenv("HOME"); snprintf(audit_path, sizeof(audit_path), "%s/.local/share/ultralock_audit.log", home); }
+    char audit_dir[1024]; strncpy(audit_dir, audit_path, sizeof(audit_dir)); char *adp = strrchr(audit_dir, '/'); if (adp) *adp='\0'; mkdir(audit_dir, 0700);
+    int audit_fd = open(audit_path, O_WRONLY | O_CREAT | O_APPEND, 0600);
+    if (audit_fd < 0) { perror("audit open"); }
+    else {
+        // read last line to recover prev_hash
+        FILE *af = fopen(audit_path, "r"); if (af) {
+            char line[4096]; char lastline[4096] = {0};
+            while (fgets(line, sizeof(line), af)) { strncpy(lastline, line, sizeof(lastline)); }
+            fclose(af);
+            // extract last hash (after last '|')
+            char *p = strrchr(lastline, '|'); if (p) { p++; size_t l = strlen(p); while (l && (p[l-1]=='\n' || p[l-1]=='\r')) { p[--l]='\0'; } }
+        }
+    }
+
+    // helper to append audit entries
+    void append_audit(const char *op, const char *detail) {
+        if (audit_fd < 0) return;
+        char ts[64]; time_t now = time(NULL); snprintf(ts, sizeof(ts), "%ld", now);
+        // compute hash = sha256(prev_hash||ts||op||detail)
+        static char prev_hash[65] = {0}; char payload[4096]; snprintf(payload, sizeof(payload), "%s|%s|%s|%s", prev_hash, ts, op, detail);
+        char newh[65]; sha256_hex(payload, newh);
+        char out[8192]; snprintf(out, sizeof(out), "%s|%s|%s|%s\n", ts, op, detail, newh);
+        write(audit_fd, out, strlen(out)); // ignoring errors
+        strncpy(prev_hash, newh, 65);
+        fsync(audit_fd);
+    }
+
+    // signal handling for graceful shutdown
+    int running = 1; int srv_fd = 0;
+    void handle_sig(int s) {
+        append_audit("shutdown", "signal-received");
+        running = 0;
+        if (srv_fd) close(srv_fd);
+        _exit(0);
+    }
+
     // IPC socket setup (prepare path & server regardless of X state for headless tests)
     char sockpath[1024];
     const char *xdg_runtime = getenv("XDG_RUNTIME_DIR");
@@ -221,8 +262,14 @@ int main(int argc, char **argv) {
     unlink(sockpath);
 
     int srv = socket(AF_UNIX, SOCK_STREAM, 0);
+    srv_fd = srv;
     if (srv < 0) { perror("socket"); return 1; }
     struct sockaddr_un addr; memset(&addr,0,sizeof(addr)); addr.sun_family = AF_UNIX; strncpy(addr.sun_path, sockpath, sizeof(addr.sun_path)-1);
+
+    // Install signal handlers
+    struct sigaction sa; memset(&sa,0,sizeof(sa)); sa.sa_handler = handle_sig; sigaction(SIGTERM, &sa, NULL); sigaction(SIGINT, &sa, NULL);
+
+    append_audit("start", "agent-started");
     if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("bind"); close(srv); return 1; }
     chmod(sockpath, 0600);
     if (listen(srv, 5) < 0) { perror("listen"); close(srv); return 1; }
@@ -276,11 +323,15 @@ int main(int argc, char **argv) {
                         char *fp = line + 5; if (strlen(fp) == 64) { int stored = 0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]==0) { strcpy(binds[b].fp, fp); binds[b].ts = time(NULL); stored=1; break; } if (stored) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR full\n", 10, 0); } else send(cfd, "ERR invalid-fp\n", 16, 0);
                     } else if (strncmp(line, "BINDADDR ", 9) == 0) {
                         char *addr = line + 9; if (strlen(addr) > 0) {
+                            // strict input validation: sane length and printable, no CR/LF
+                            if (strlen(addr) < 10 || strlen(addr) > 512) { send(cfd, "ERR invalid-addr\n", 17, 0); line = strtok(NULL, "\r\n"); continue; }
+                            int bad = 0; for (int ii=0; addr[ii]; ii++) { unsigned char ch = addr[ii]; if (ch <= 32 || ch == '\r' || ch == '\n') { bad=1; break; } }
+                            if (bad) { send(cfd, "ERR invalid-addr\n", 17, 0); line = strtok(NULL, "\r\n"); continue; }
                             char canonical[MAX_CLIP]; strncpy(canonical, addr, MAX_CLIP); canonicalize(canonical);
                             char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
                             char fp2[65]; sha256_hex(composite, fp2);
                             int stored = 0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]==0) { strncpy(binds[b].fp, fp2, 65); binds[b].ts = time(NULL); stored = 1; break; }
-                            if (stored) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR full\n", 10, 0);
+                            if (stored) { send(cfd, "OK\n", 3, 0); append_audit("bindaddr", canonical); } else send(cfd, "ERR full\n", 10, 0);
                         } else send(cfd, "ERR invalid-addr\n", 17, 0);
                     } else if (strncmp(line, "UNBIND ", 7) == 0) {
                         char *fp = line + 7; int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR notfound\n", 14, 0);
@@ -289,11 +340,18 @@ int main(int argc, char **argv) {
                             char canonical[MAX_CLIP]; strncpy(canonical, addr, MAX_CLIP); canonicalize(canonical);
                             char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
                             char fp3[65]; sha256_hex(composite, fp3);
-                            int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp3)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR notfound\n", 14, 0);
+                            int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp3)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) { send(cfd, "OK\n", 3, 0); append_audit("unbindaddr", canonical); } else send(cfd, "ERR notfound\n", 14, 0);
                         } else send(cfd, "ERR invalid-addr\n", 17, 0);
                     } else if (strcmp(line, "LIST") == 0) {
+                        append_audit("list", "client-list");
                         for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]) { char out[128]; snprintf(out, sizeof(out), "FP %s %ld\n", binds[b].fp, binds[b].ts); send(cfd, out, strlen(out), 0); }
                         send(cfd, "END\n", 4, 0);
+                    } else if (strncmp(line, "VERIFYADDR ", 11) == 0) {
+                        char *addr = line + 11; char canonical[MAX_CLIP]; strncpy(canonical, addr, MAX_CLIP); canonicalize(canonical);
+                        char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
+                        char fpv[65]; sha256_hex(composite, fpv);
+                        int ok=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fpv)==0) { ok=1; break; }
+                        if (ok) { send(cfd, "OK\n", 3, 0); append_audit("verify", canonical); } else { send(cfd, "ERR notbound\n", 14, 0); append_audit("verify-failed", canonical); }
                     } else {
                         send(cfd, "ERR unknown\n", 12, 0);
                     }
