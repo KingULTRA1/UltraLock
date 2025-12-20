@@ -208,12 +208,19 @@ int main(int argc, char **argv) {
     // Registered fingerprints (simple fixed-size store)
     struct bind_entry binds[MAX_BINDS]; memset(binds,0,sizeof(binds));
 
+    // Bind persistence path (durable binds across restarts)
+    char binds_path[1024]; const char *xdgdata = getenv("XDG_DATA_HOME");
+    if (xdgdata && xdgdata[0]) snprintf(binds_path, sizeof(binds_path), "%s/ultralock_binds.txt", xdgdata);
+    else { const char *home = getenv("HOME"); snprintf(binds_path, sizeof(binds_path), "%s/.local/share/ultralock_binds.txt", home); }
+    char binds_dir[1024]; strncpy(binds_dir, binds_path, sizeof(binds_dir)); char *bdp = strrchr(binds_dir, '/'); if (bdp) *bdp='\0'; mkdir(binds_dir, 0700);
+
     // Audit log setup (append-only)
-    char audit_path[1024]; const char *xdgdata = getenv("XDG_RUNTIME_DIR");
+    char audit_path[1024]; xdgdata = getenv("XDG_RUNTIME_DIR");
     if (xdgdata && xdgdata[0]) snprintf(audit_path, sizeof(audit_path), "%s/ultralock_audit.log", xdgdata);
     else { const char *home = getenv("HOME"); snprintf(audit_path, sizeof(audit_path), "%s/.local/share/ultralock_audit.log", home); }
     char audit_dir[1024]; strncpy(audit_dir, audit_path, sizeof(audit_dir)); char *adp = strrchr(audit_dir, '/'); if (adp) *adp='\0'; mkdir(audit_dir, 0700);
     int audit_fd = open(audit_path, O_WRONLY | O_CREAT | O_APPEND, 0600);
+    char prev_hash[65] = {0};
     if (audit_fd < 0) { perror("audit open"); }
     else {
         // read last line to recover prev_hash
@@ -222,7 +229,7 @@ int main(int argc, char **argv) {
             while (fgets(line, sizeof(line), af)) { strncpy(lastline, line, sizeof(lastline)); }
             fclose(af);
             // extract last hash (after last '|')
-            char *p = strrchr(lastline, '|'); if (p) { p++; size_t l = strlen(p); while (l && (p[l-1]=='\n' || p[l-1]=='\r')) { p[--l]='\0'; } }
+            char *p = strrchr(lastline, '|'); if (p) { p++; size_t l = strlen(p); while (l && (p[l-1]=='\n' || p[l-1]=='\r')) { p[--l]='\0'; } strncpy(prev_hash, p, 65); }
         }
     }
 
@@ -231,13 +238,42 @@ int main(int argc, char **argv) {
         if (audit_fd < 0) return;
         char ts[64]; time_t now = time(NULL); snprintf(ts, sizeof(ts), "%ld", now);
         // compute hash = sha256(prev_hash||ts||op||detail)
-        static char prev_hash[65] = {0}; char payload[4096]; snprintf(payload, sizeof(payload), "%s|%s|%s|%s", prev_hash, ts, op, detail);
+        char payload[4096]; snprintf(payload, sizeof(payload), "%s|%s|%s|%s", prev_hash, ts, op, detail);
         char newh[65]; sha256_hex(payload, newh);
         char out[8192]; snprintf(out, sizeof(out), "%s|%s|%s|%s\n", ts, op, detail, newh);
         write(audit_fd, out, strlen(out)); // ignoring errors
         strncpy(prev_hash, newh, 65);
         fsync(audit_fd);
     }
+
+    // helper to persist binds atomically
+    void save_binds() {
+        char tmp[1024]; snprintf(tmp, sizeof(tmp), "%s.tmp", binds_path);
+        int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (fd < 0) { append_audit("save-binds-fail", "open"); return; }
+        for (int i=0;i<MAX_BINDS;i++) if (binds[i].fp[0]) {
+            char line[128]; int n = snprintf(line, sizeof(line), "%s %ld\n", binds[i].fp, binds[i].ts);
+            write(fd, line, n);
+        }
+        fsync(fd); close(fd);
+        rename(tmp, binds_path);
+        append_audit("save-binds", binds_path);
+    }
+
+    // helper to load binds from persistence
+    void load_binds() {
+        FILE *f = fopen(binds_path, "r"); if (!f) { append_audit("load-binds", "none"); return; }
+        char line[256]; int idx = 0; while (fgets(line, sizeof(line), f)) {
+            char fp[65]; long ts; if (sscanf(line, "%64s %ld", fp, &ts) == 2) {
+                strncpy(binds[idx].fp, fp, 65); binds[idx].ts = ts; idx++; if (idx>=MAX_BINDS) break;
+            }
+        }
+        fclose(f);
+        append_audit("load-binds", binds_path);
+    }
+
+    // load persisted binds at startup
+    load_binds();
 
     // signal handling for graceful shutdown
     int running = 1; int srv_fd = 0;
@@ -331,16 +367,16 @@ int main(int argc, char **argv) {
                             char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
                             char fp2[65]; sha256_hex(composite, fp2);
                             int stored = 0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]==0) { strncpy(binds[b].fp, fp2, 65); binds[b].ts = time(NULL); stored = 1; break; }
-                            if (stored) { send(cfd, "OK\n", 3, 0); append_audit("bindaddr", canonical); } else send(cfd, "ERR full\n", 10, 0);
+                            if (stored) { send(cfd, "OK\n", 3, 0); append_audit("bindaddr", canonical); save_binds(); } else send(cfd, "ERR full\n", 10, 0);
                         } else send(cfd, "ERR invalid-addr\n", 17, 0);
                     } else if (strncmp(line, "UNBIND ", 7) == 0) {
-                        char *fp = line + 7; int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR notfound\n", 14, 0);
+                        char *fp = line + 7; int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) { send(cfd, "OK\n", 3, 0); save_binds(); append_audit("unbind", fp); } else send(cfd, "ERR notfound\n", 14, 0);
                     } else if (strncmp(line, "UNBINDADDR ", 11) == 0) {
                         char *addr = line + 11; if (strlen(addr)>0) {
                             char canonical[MAX_CLIP]; strncpy(canonical, addr, MAX_CLIP); canonicalize(canonical);
                             char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
                             char fp3[65]; sha256_hex(composite, fp3);
-                            int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp3)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) { send(cfd, "OK\n", 3, 0); append_audit("unbindaddr", canonical); } else send(cfd, "ERR notfound\n", 14, 0);
+                            int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp3)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) { send(cfd, "OK\n", 3, 0); append_audit("unbindaddr", canonical); save_binds(); } else send(cfd, "ERR notfound\n", 14, 0);
                         } else send(cfd, "ERR invalid-addr\n", 17, 0);
                     } else if (strcmp(line, "LIST") == 0) {
                         append_audit("list", "client-list");
