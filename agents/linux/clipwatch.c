@@ -191,7 +191,11 @@ int check_clipboard_text(const char *text, char *out_reason, size_t out_sz, cons
 int main(int argc, char **argv) {
     printf("UltraLock clipwatch prototype starting...\n");
     // allow a headless self-test mode: ./clipwatch --selftest
-    int selftest = 0; if (argc > 1 && strcmp(argv[1], "--selftest") == 0) selftest = 1;
+    int selftest = 0; int daemon_mode = 0;
+    for (int i=1;i<argc;i++) {
+        if (strcmp(argv[i], "--selftest") == 0) selftest = 1;
+        if (strcmp(argv[i], "--daemon") == 0) daemon_mode = 1;
+    }
 
     char *device_salt = read_or_create_device_salt();
     if (!device_salt) { fprintf(stderr, "Failed to get device salt\n"); return 1; }
@@ -239,6 +243,63 @@ int main(int argc, char **argv) {
         } else {
             printf("address check FAILED: %s\n", reason);
             return 2;
+        }
+    }
+
+    // If running in daemon mode, continue with IPC-only loop (no X)
+    if (daemon_mode) {
+        printf("UltraLock running in daemon-only mode (IPC only)\n");
+        int client_fds[8]; for (int i=0;i<8;i++) client_fds[i] = -1;
+        while (1) {
+            fd_set readfds; FD_ZERO(&readfds);
+            FD_SET(srv, &readfds);
+            int maxfd = srv;
+            for (int i=0;i<8;i++) if (client_fds[i] >= 0) { FD_SET(client_fds[i], &readfds); if (client_fds[i] > maxfd) maxfd = client_fds[i]; }
+            struct timeval tv; tv.tv_sec = 1; tv.tv_usec = 0;
+            int sel = select(maxfd + 1, &readfds, NULL, NULL, &tv);
+            if (sel <= 0) continue;
+            if (FD_ISSET(srv, &readfds)) {
+                int c = accept(srv, NULL, NULL);
+                if (c >= 0) {
+                    int placed = 0; for (int i=0;i<8;i++) if (client_fds[i] < 0) { client_fds[i] = c; placed = 1; break; }
+                    if (!placed) { close(c); }
+                    else printf("[IPC] client connected\n");
+                }
+            }
+            for (int i=0;i<8;i++) {
+                int cfd = client_fds[i]; if (cfd < 0) continue; if (!FD_ISSET(cfd, &readfds)) continue;
+                char rbuf[1024]; ssize_t r = recv(cfd, rbuf, sizeof(rbuf)-1, 0);
+                if (r <= 0) { close(cfd); client_fds[i] = -1; continue; }
+                rbuf[r] = '\0'; char *line = strtok(rbuf, "\r\n");
+                while (line) {
+                    if (strncmp(line, "BIND ", 5) == 0) {
+                        char *fp = line + 5; if (strlen(fp) == 64) { int stored = 0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]==0) { strcpy(binds[b].fp, fp); binds[b].ts = time(NULL); stored=1; break; } if (stored) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR full\n", 10, 0); } else send(cfd, "ERR invalid-fp\n", 16, 0);
+                    } else if (strncmp(line, "BINDADDR ", 9) == 0) {
+                        char *addr = line + 9; if (strlen(addr) > 0) {
+                            char canonical[MAX_CLIP]; strncpy(canonical, addr, MAX_CLIP); canonicalize(canonical);
+                            char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
+                            char fp2[65]; sha256_hex(composite, fp2);
+                            int stored = 0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]==0) { strncpy(binds[b].fp, fp2, 65); binds[b].ts = time(NULL); stored = 1; break; }
+                            if (stored) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR full\n", 10, 0);
+                        } else send(cfd, "ERR invalid-addr\n", 17, 0);
+                    } else if (strncmp(line, "UNBIND ", 7) == 0) {
+                        char *fp = line + 7; int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR notfound\n", 14, 0);
+                    } else if (strncmp(line, "UNBINDADDR ", 11) == 0) {
+                        char *addr = line + 11; if (strlen(addr)>0) {
+                            char canonical[MAX_CLIP]; strncpy(canonical, addr, MAX_CLIP); canonicalize(canonical);
+                            char composite[4096]; snprintf(composite, sizeof(composite), "%s||%s||%s||%s", canonical, "local-origin", device_salt, session_nonce);
+                            char fp3[65]; sha256_hex(composite, fp3);
+                            int found=0; for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0] && strcmp(binds[b].fp, fp3)==0) { binds[b].fp[0]=0; binds[b].ts=0; found=1; break; } if (found) send(cfd, "OK\n", 3, 0); else send(cfd, "ERR notfound\n", 14, 0);
+                        } else send(cfd, "ERR invalid-addr\n", 17, 0);
+                    } else if (strcmp(line, "LIST") == 0) {
+                        for (int b=0;b<MAX_BINDS;b++) if (binds[b].fp[0]) { char out[128]; snprintf(out, sizeof(out), "FP %s %ld\n", binds[b].fp, binds[b].ts); send(cfd, out, strlen(out), 0); }
+                        send(cfd, "END\n", 4, 0);
+                    } else {
+                        send(cfd, "ERR unknown\n", 12, 0);
+                    }
+                    line = strtok(NULL, "\r\n");
+                }
+            }
         }
     }
 

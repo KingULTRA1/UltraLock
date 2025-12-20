@@ -18,12 +18,25 @@ if command -v socat >/dev/null 2>&1; then
     echo -e "$CMD" | socat - UNIX-CONNECT:"$SOCK"
     exit 0
 fi
-# Fallback: tiny python one-liner if python supports AF_UNIX sockets
-if python -c 'import socket,sys
+# Fallback: try python3 then python (some systems have only python3)
+if command -v python3 >/dev/null 2>&1; then
+    python3 - <<PY3_EOF 2>/dev/null
+import socket,sys
 s=socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect(("'"$SOCK"'"))
-s.sendall(b"'$CMD'\n")
-print(s.recv(4096).decode())' 2>/dev/null; then
+s.connect(("$SOCK"))
+s.sendall(b"$CMD\n")
+print(s.recv(4096).decode(), end='')
+PY3_EOF
+    exit 0
+fi
+if command -v python >/dev/null 2>&1; then
+    python - <<PY_EOF 2>/dev/null
+import socket,sys
+s=socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(("$SOCK"))
+s.sendall(b"$CMD\n")
+print(s.recv(4096).decode(), end='')
+PY_EOF
     exit 0
 fi
 
